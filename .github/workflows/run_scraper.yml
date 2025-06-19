@@ -12,7 +12,7 @@ on:
 
 jobs:
   build-and-commit:
-    runs-on: ubuntu-latest # O servidor será uma máquina com Linux Ubuntu
+    runs-on: ubuntu-latest
 
     steps:
       # 1. Faz o checkout do seu código do repositório para o servidor
@@ -25,11 +25,11 @@ jobs:
         with:
           python-version: '3.10'
 
-      # 3. Instala o Firefox no servidor
+      # 3. Instala o Firefox no servidor (COM A CORREÇÃO)
       - name: Instalar Firefox
         run: |
           sudo apt-get update
-          sudo apt-get install -y firefox-esr
+          sudo apt-get install -y firefox # <-- ESTA É A LINHA CORRIGIDA
 
       # 4. Instala as bibliotecas Python listadas no requirements.txt
       - name: Instalar dependências Python
@@ -46,7 +46,7 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "Diário Oficial baixado em $(date -u --iso-8601=seconds)"
-          file_pattern: "*.pdf" # Adiciona apenas arquivos .pdf ao commit
+          file_pattern: "*.pdf"
           commit_user_name: GitHub Actions Bot
           commit_user_email: actions@github.com
           commit_author: GitHub Actions Bot <actions@github.com>
