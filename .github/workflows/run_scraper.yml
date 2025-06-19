@@ -39,7 +39,7 @@ jobs:
 
       # 5. Executa o seu script Python para baixar o arquivo
       - name: Executar o script de download
-        run: python baixar_diario.py
+        run: python DOTCE-CE_VGH.py
 
       # 6. Faz o commit e push do novo arquivo PDF para o seu repositório
       - name: Commit e Push do Diário Oficial
