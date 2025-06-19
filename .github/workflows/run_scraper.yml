@@ -1,0 +1,52 @@
+# .github/workflows/run_scraper.yml
+
+name: Baixar Diário Oficial TCE-CE
+
+on:
+  # Permite que você execute este workflow manualmente pela aba Actions
+  workflow_dispatch:
+  
+  # Executa o script automaticamente todos os dias às 09:00 UTC (06:00 no horário de Brasília)
+  schedule:
+    - cron: '0 9 * * *'
+
+jobs:
+  build-and-commit:
+    runs-on: ubuntu-latest # O servidor será uma máquina com Linux Ubuntu
+
+    steps:
+      # 1. Faz o checkout do seu código do repositório para o servidor
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      # 2. Configura o ambiente Python
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      # 3. Instala o Firefox no servidor
+      - name: Instalar Firefox
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y firefox-esr
+
+      # 4. Instala as bibliotecas Python listadas no requirements.txt
+      - name: Instalar dependências Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 5. Executa o seu script Python para baixar o arquivo
+      - name: Executar o script de download
+        run: python baixar_diario.py
+
+      # 6. Faz o commit e push do novo arquivo PDF para o seu repositório
+      - name: Commit e Push do Diário Oficial
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Diário Oficial baixado em $(date -u --iso-8601=seconds)"
+          file_pattern: "*.pdf" # Adiciona apenas arquivos .pdf ao commit
+          commit_user_name: GitHub Actions Bot
+          commit_user_email: actions@github.com
+          commit_author: GitHub Actions Bot <actions@github.com>
