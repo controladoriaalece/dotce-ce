@@ -3,11 +3,9 @@
 name: Baixar Diário Oficial TCE-CE
 
 on:
-  # Permite que você execute este workflow manualmente pela aba Actions
   workflow_dispatch:
-  
-  # Executa o script automaticamente todos os dias às 09:00 UTC (06:00 no horário de Brasília)
   schedule:
+    # Executa todos os dias às 09:00 UTC (06:00 no horário de Brasília)
     - cron: '0 9 * * *'
 
 jobs:
@@ -15,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Faz o checkout do seu código do repositório para o servidor
+      # 1. Faz o checkout do seu código
       - name: Checkout do Repositório
         uses: actions/checkout@v4
 
@@ -25,23 +23,25 @@ jobs:
         with:
           python-version: '3.10'
 
-      # 3. Instala o Firefox no servidor (COM A CORREÇÃO)
-      - name: Instalar Firefox
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y firefox # <-- ESTA É A LINHA CORRIGIDA
+      # 3. Instala Firefox e suas dependências usando uma Action especializada (A GRANDE MUDANÇA)
+      - name: Instalar Firefox e dependências
+        uses: browser-actions/setup-firefox@v1
+        # Esta Action cuida de instalar o navegador e o driver corretamente
 
-      # 4. Instala as bibliotecas Python listadas no requirements.txt
+      # 4. Instala as bibliotecas Python
       - name: Instalar dependências Python
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 5. Executa o seu script Python para baixar o arquivo
+      # 5. Executa o seu script de download
       - name: Executar o script de download
-        run: python DOTCE-CE_VGH.py
+        # Adicionamos 'geckodriver' ao PATH para garantir que o Selenium o encontre
+        run: |
+          export PATH=$PATH:$GECKODRIVER_PATH
+          python DOTCE-CE_VGH.py
 
-      # 6. Faz o commit e push do novo arquivo PDF para o seu repositório
+      # 6. Faz o commit e push do novo arquivo PDF
       - name: Commit e Push do Diário Oficial
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
