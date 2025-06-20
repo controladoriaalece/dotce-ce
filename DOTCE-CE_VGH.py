@@ -1,5 +1,3 @@
-# Nome do seu arquivo .py (ex: DOTCE-CE_VGH.py)
-
 import os
 import time
 import re
@@ -11,16 +9,13 @@ from email.mime.application import MIMEApplication
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-# webdriver-manager NÃO é importado
 from selenium.webdriver.firefox.service import Service as FirefoxService
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+# As funções encontrar_publicacoes e enviar_email continuam as mesmas
+
 def encontrar_publicacoes(caminho_pdf, termo_busca):
-    """
-    Abre um arquivo PDF, extrai seu texto e procura por publicações
-    que contenham o termo de busca.
-    """
     print(f"Pesquisando o termo '{termo_busca}' no arquivo {caminho_pdf}...")
     publicacoes_encontradas = []
     try:
@@ -29,48 +24,37 @@ def encontrar_publicacoes(caminho_pdf, termo_busca):
         for pagina in doc:
             texto_completo += pagina.get_text("text", sort=True)
         doc.close()
-
         padrao_publicacao = re.compile(r'^\s*(PORTARIA|ATO|DECRETO|AVISO|EXTRATO DE|RESOLUÇÃO|INSTRUÇÃO NORMATIVA)', re.MULTILINE | re.IGNORECASE)
         possiveis_publicacoes = padrao_publicacao.split(texto_completo)
-        
         publicacoes = []
         for i in range(1, len(possiveis_publicacoes), 2):
             publicacoes.append(possiveis_publicacoes[i] + possiveis_publicacoes[i+1])
-
         for pub in publicacoes:
             if re.search(termo_busca, pub, re.IGNORECASE):
                 print("Termo encontrado em uma publicação.")
                 publicacoes_encontradas.append(pub.strip())
-        
         return publicacoes_encontradas
     except Exception as e:
         print(f"Erro ao ler e pesquisar o PDF: {e}")
         return []
 
 def enviar_email(assunto, corpo_html, destinatario, caminho_anexo):
-    """
-    Envia um e-mail com o PDF em anexo.
-    """
     remetente = os.environ.get('EMAIL_ADDRESS')
     senha = os.environ.get('EMAIL_PASSWORD')
     servidor_smtp = os.environ.get('SMTP_SERVER')
     porta_smtp = int(os.environ.get('SMTP_PORT', 587))
-
     if not all([remetente, senha, servidor_smtp, porta_smtp]):
         raise ValueError("ERRO: As variáveis de ambiente para envio de e-mail não foram configuradas.")
-
     print(f"Preparando e-mail para {destinatario}...")
     msg = MIMEMultipart()
     msg['Subject'] = assunto
     msg['From'] = remetente
     msg['To'] = destinatario
     msg.attach(MIMEText(corpo_html, 'html'))
-
     with open(caminho_anexo, 'rb') as f:
         anexo = MIMEApplication(f.read(), _subtype='pdf')
         anexo.add_header('Content-Disposition', 'attachment', filename=os.path.basename(caminho_anexo))
         msg.attach(anexo)
-
     try:
         with smtplib.SMTP(servidor_smtp, porta_smtp) as server:
             server.starttls()
@@ -93,25 +77,25 @@ def baixar_e_processar_diario():
         options.set_preference("browser.download.dir", pasta_de_download)
         options.set_preference("browser.helperApps.neverAsk.saveToDisk", "application/pdf")
         options.set_preference("pdfjs.disabled", True)
-
-        # --- LINHA CORRIGIDA ---
-        # Diz ao Selenium para usar o driver que a Action do GitHub já instalou.
         service = FirefoxService()
-        
         driver = webdriver.Firefox(service=service, options=options)
         
         pagina_url = "https://www.tce.ce.gov.br/diario-oficial/consulta-por-data-de-edicao"
         print(f"Acessando: {pagina_url}")
         driver.get(pagina_url)
-
         wait = WebDriverWait(driver, 40)
+        
         print("Aguardando e mudando o foco para o iframe...")
         iframe = wait.until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
         driver.switch_to.frame(iframe)
         
-        print("Selecionando a opção 'Última Edição'...")
-        radio_ultima_edicao = wait.until(EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), 'Última Edição')]/preceding-sibling::div//input[@type='radio']")))
-        radio_ultima_edicao.click()
+        # --- LINHA CORRIGIDA ---
+        # Agora procuramos e clicamos diretamente na etiqueta de texto (label).
+        print("Garantindo que a opção 'Última Edição' está selecionada...")
+        label_ultima_edicao = wait.until(
+            EC.element_to_be_clickable((By.XPATH, "//label[contains(text(), 'Última Edição')]"))
+        )
+        label_ultima_edicao.click()
         time.sleep(1)
 
         print("Aguardando o botão 'Visualizar Edição'...")
