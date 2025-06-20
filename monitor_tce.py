@@ -13,6 +13,8 @@ import unicodedata
 # --- CONFIGURAÇÕES DINÂMICAS (LIDAS DAS VARIÁVEIS DE AMBIENTE) ---
 
 # As credenciais e destinatários são lidos de forma segura a partir das "Secrets" do GitHub
+SMTP_SERVER = 'smtp.gmail.com'  # Ex: 'smtp.gmail.com' ou 'smtp.office365.com'
+SMTP_PORT = 587                   # Porta do servidor SMTP (587 para TLS)
 EMAIL_SENDER = os.getenv('EMAIL_SENDER')
 EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD')
 # Os destinatários são lidos como uma string separada por vírgulas e convertidos para uma lista
