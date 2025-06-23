@@ -10,7 +10,7 @@ on:
   schedule:
     # Executa todos os dias da semana (de segunda a sexta) às 10:00 no horário de Brasília (13:00 UTC)
     # Formato: Minuto Hora Dia(mês) Mês Dia(semana)
-    - cron: '30 18 * * 1-5'
+    - cron: '30 20 * * 1-5'
 
 # Define os trabalhos (jobs) a serem executados
 jobs:
