@@ -31,7 +31,7 @@ EMAIL_RECIPIENTS = [email.strip() for email in EMAIL_RECIPIENTS_STR.split(',')]
 # --- CONFIGURAÇÕES GERAIS ---
 BASE_URL = "https://contexto-api.tce.ce.gov.br/arquivos/doe?url=%2F{year_code}%2FDOTCECE_{year_code}-{gazette_number}.pdf"
 START_GAZETTE_NUMBER = 112
-SEARCH_TERMS = ['Secretaria de Educação', 'Secretaria Municipal', 'Ofício Circular']
+SEARCH_TERMS = ['Secretaria de Educação', 'Secretaria Municipal', 'Jurisdicionados Estaduais']
 
 def normalize_text(text):
     """
@@ -114,7 +114,7 @@ def analyze_pdf_and_find_terms(pdf_path, search_terms):
         r'^\s*\*\s?\*\s?\*\s?\*\s?\*\s?\*\s?\*\s*$', r'^PROCESSO:\s*\d{5}/\d{4}-\d$',
         r'^\d+\s+-\s+Processo\s+nº', r'^ACÓRDÃO\s+Nº\s+\d+/\d{4}$',
         r'^ACÓRDÃO\s+N\.º\s+\d+/\d{4}$', r'^COMUNICAÇÃO\s+PROCESSUAL\s+DOE-TCE/CE\s+N°',
-        r'^ATO\s+DA\s+PRESIDÊNCIA\s+Nº', r'^ATO\s+Nº', r'^PORTARIA\s+Nº?'
+        r'^ATO\s+DA\s+PRESIDÊNCIA\s+Nº', r'^OFÍCIO CIRCULAR\s+Nº', r'^ATO\s+Nº', r'^PORTARIA\s+Nº?'
     ]
     combined_pattern = '|'.join(split_patterns)
     lines = full_text.split('\n')
