@@ -1,4 +1,3 @@
-import requests
 import smtplib
 import os
 import re
@@ -45,7 +44,7 @@ def normalize_text(text):
 
 def get_latest_gazette_info():
     """
-    Encontra a URL e o nome do arquivo do diário mais recente usando curl via subprocess.
+    Encontra a URL e o nome do arquivo do diário mais recente usando curl via subprocess para máxima compatibilidade.
     """
     print("Procurando pelo diário oficial mais recente...")
     try:
@@ -62,16 +61,28 @@ def get_latest_gazette_info():
             url_to_check = f"https://contexto-api.tce.ce.gov.br/arquivos/doe?url={encoded_path}"
             print(f"Tentando verificar: {file_name}...")
 
-            command = ['curl', '--head', '--silent', '--location', '--max-time', '20', url_to_check]
+            # Comando curl para obter apenas os cabeçalhos (-I) e seguir redirecionamentos (-L)
+            command = ['curl', '-I', '--silent', '-L', '--max-time', '30', url_to_check]
             
-            result = subprocess.run(command, capture_output=True, text=True)
+            result = subprocess.run(command, capture_output=True, text=True, check=False)
 
             status_code = 0
             if result.returncode == 0 and result.stdout:
-                first_line = result.stdout.split('\n')[0]
-                match = re.search(r'HTTP/[\d\.]+\s+(\d{3})', first_line)
-                if match:
-                    status_code = int(match.group(1))
+                # Pega a última linha de status HTTP, que é a resposta final após redirecionamentos
+                lines = result.stdout.strip().split('\n')
+                last_status_line = ''
+                for line in reversed(lines):
+                    if line.strip().startswith('HTTP/'):
+                        last_status_line = line
+                        break
+                
+                if last_status_line:
+                    match = re.search(r'HTTP/[\d\.]+\s+(\d{3})', last_status_line)
+                    if match:
+                        status_code = int(match.group(1))
+            else:
+                 print(f"Comando curl falhou. Código de retorno: {result.returncode}. Stderr: {result.stderr}")
+
 
             if status_code == 200:
                 print(f"Sucesso! Diário encontrado: {file_name}")
@@ -79,7 +90,7 @@ def get_latest_gazette_info():
                 last_successful_filename = file_name
                 gazette_number += 1
             else:
-                print(f"Falha ao encontrar o diário nº {gazette_number} (Status: {status_code}).")
+                print(f"Falha ao encontrar o diário nº {gazette_number} (Status HTTP: {status_code}).")
                 break
     except Exception as e:
         print(f"Erro de conexão ou subprocesso ao tentar encontrar o diário: {e}")
@@ -94,7 +105,8 @@ def download_pdf(url, filename):
     print(f"Baixando o arquivo: {filename}...")
     filepath = os.path.join(os.getcwd(), filename)
     try:
-        command = ['curl', '--location', '--output', filepath, '--silent', '--max-time', '90', url]
+        # Comando curl para baixar o arquivo (-o) e seguir redirecionamentos (-L)
+        command = ['curl', '-L', '-o', filepath, '--silent', '--max-time', '90', url]
         subprocess.run(command, check=True)
         print(f"Download completo. Arquivo salvo em: {filepath}")
         return filepath
