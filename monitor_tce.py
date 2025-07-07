@@ -1,3 +1,4 @@
+import requests
 import smtplib
 import os
 import re
@@ -8,32 +9,33 @@ from email.mime.base import MIMEBase
 from email import encoders
 import fitz  # PyMuPDF
 import unicodedata
-import subprocess
 
 # --- CONFIGURAÇÕES DINÂMICAS (LIDAS DAS VARIÁVEIS DE AMBIENTE) ---
+
+# As credenciais e destinatários são lidos de forma segura a partir das "Secrets" do GitHub
+SMTP_SERVER = 'smtp.gmail.com'  # Ex: 'smtp.gmail.com' ou 'smtp.office365.com'
+SMTP_PORT = 587                   # Porta do servidor SMTP (587 para TLS)
 EMAIL_SENDER = os.getenv('EMAIL_SENDER')
 EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD')
+# Os destinatários são lidos como uma string separada por vírgulas e convertidos para uma lista
 EMAIL_RECIPIENTS_STR = os.getenv('EMAIL_RECIPIENTS')
 
+# Validação para garantir que as variáveis de ambiente foram configuradas no GitHub
+if not all([EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECIPIENTS_STR]):
+    print("ERRO: Variáveis de ambiente (EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECIPIENTS) não foram configuradas nos Secrets do GitHub.")
+    exit(1) # Encerra o script se as credenciais não estiverem disponíveis
+
+# Converte a string de e-mails em uma lista de e-mails
+EMAIL_RECIPIENTS = [email.strip() for email in EMAIL_RECIPIENTS_STR.split(',')]
+
 # --- CONFIGURAÇÕES GERAIS ---
-SMTP_SERVER = 'smtp.gmail.com'
-SMTP_PORT = 587
 BASE_URL = "https://contexto-api.tce.ce.gov.br/arquivos/doe?url=%2F{year_code}%2FDOTCECE_{year_code}-{gazette_number}.pdf"
 START_GAZETTE_NUMBER = 122
 SEARCH_TERMS = ['Assembleia Legislativa', 'Fundo de Previdência Parlamentar', 'Jurisdicionados Estaduais', 'Jurisdicionados municipais e estaduais']
 
-# --- INÍCIO DO SCRIPT ---
-
-# Validação das variáveis de ambiente
-if not all([EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECIPIENTS_STR]):
-    print("ERRO: Variáveis de ambiente (EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECIPIENTS) não foram configuradas nos Secrets do GitHub.")
-    exit(1)
-
-EMAIL_RECIPIENTS = [email.strip() for email in EMAIL_RECIPIENTS_STR.split(',')]
-
 def normalize_text(text):
     """
-    Remove acentos, cedilhas e converte para minúsculas.
+    Remove acentos, cedilhas e converte para minúsculas para uma comparação eficaz.
     """
     try:
         nfkd_form = unicodedata.normalize('NFD', text)
@@ -44,7 +46,7 @@ def normalize_text(text):
 
 def get_latest_gazette_info():
     """
-    Encontra a URL e o nome do arquivo do diário mais recente usando curl via subprocess para máxima compatibilidade.
+    Encontra a URL e o nome do arquivo do diário mais recente.
     """
     print("Procurando pelo diário oficial mais recente...")
     try:
@@ -60,63 +62,42 @@ def get_latest_gazette_info():
             encoded_path = f"%2F{year_code}%2F{file_name}"
             url_to_check = f"https://contexto-api.tce.ce.gov.br/arquivos/doe?url={encoded_path}"
             print(f"Tentando verificar: {file_name}...")
+            response = requests.head(url_to_check, allow_redirects=True, timeout=15)
 
-            # Comando curl para obter apenas os cabeçalhos (-I) e seguir redirecionamentos (-L)
-            command = ['curl', '-I', '--silent', '-L', '--max-time', '30', url_to_check]
-            
-            result = subprocess.run(command, capture_output=True, text=True, check=False)
-
-            status_code = 0
-            if result.returncode == 0 and result.stdout:
-                # Pega a última linha de status HTTP, que é a resposta final após redirecionamentos
-                lines = result.stdout.strip().split('\n')
-                last_status_line = ''
-                for line in reversed(lines):
-                    if line.strip().startswith('HTTP/'):
-                        last_status_line = line
-                        break
-                
-                if last_status_line:
-                    match = re.search(r'HTTP/[\d\.]+\s+(\d{3})', last_status_line)
-                    if match:
-                        status_code = int(match.group(1))
-            else:
-                 print(f"Comando curl falhou. Código de retorno: {result.returncode}. Stderr: {result.stderr}")
-
-
-            if status_code == 200:
+            if response.status_code == 200:
                 print(f"Sucesso! Diário encontrado: {file_name}")
                 last_successful_url = url_to_check
                 last_successful_filename = file_name
                 gazette_number += 1
             else:
-                print(f"Falha ao encontrar o diário nº {gazette_number} (Status HTTP: {status_code}).")
+                print(f"Falha ao encontrar o diário nº {gazette_number} (Status: {response.status_code}).")
                 break
-    except Exception as e:
-        print(f"Erro de conexão ou subprocesso ao tentar encontrar o diário: {e}")
+    except requests.exceptions.RequestException as e:
+        print(f"Erro de conexão ao tentar encontrar o diário: {e}")
         return None, None
         
     return last_successful_url, last_successful_filename
 
 def download_pdf(url, filename):
     """
-    Baixa o arquivo PDF da URL fornecida usando curl via subprocess.
+    Baixa o arquivo PDF da URL fornecida.
     """
     print(f"Baixando o arquivo: {filename}...")
-    filepath = os.path.join(os.getcwd(), filename)
     try:
-        # Comando curl para baixar o arquivo (-o) e seguir redirecionamentos (-L)
-        command = ['curl', '-L', '-o', filepath, '--silent', '--max-time', '90', url]
-        subprocess.run(command, check=True)
+        response = requests.get(url, timeout=60)
+        response.raise_for_status()
+        filepath = os.path.join(os.getcwd(), filename)
+        with open(filepath, 'wb') as f:
+            f.write(response.content)
         print(f"Download completo. Arquivo salvo em: {filepath}")
         return filepath
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        print(f"Erro ao baixar o PDF com curl: {e}")
+    except requests.exceptions.RequestException as e:
+        print(f"Erro ao baixar o PDF: {e}")
         return None
 
 def analyze_pdf_and_find_terms(pdf_path, search_terms):
     """
-    Lê o texto de um PDF, separa em publicações e busca por termos específicos.
+    Lê o texto de um PDF, separa em publicações e busca por termos específicos, ignorando acentos e caixa.
     """
     print("Analisando o conteúdo do PDF...")
     matched_publications = []
@@ -185,6 +166,8 @@ def send_email_with_attachment(subject, body, recipients, attachment_path):
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         server.starttls()
         server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+        # O campo 'To' é omitido, e os destinatários são passados no sendmail,
+        # tratando-os efetivamente como BCC (Cópia Oculta).
         server.sendmail(EMAIL_SENDER, recipients, msg.as_string())
         server.quit()
         print("E-mail enviado com sucesso!")
