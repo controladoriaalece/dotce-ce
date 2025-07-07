@@ -30,7 +30,7 @@ EMAIL_RECIPIENTS = [email.strip() for email in EMAIL_RECIPIENTS_STR.split(',')]
 
 # --- CONFIGURAÇÕES GERAIS ---
 BASE_URL = "https://contexto-api.tce.ce.gov.br/arquivos/doe?url=%2F{year_code}%2FDOTCECE_{year_code}-{gazette_number}.pdf"
-START_GAZETTE_NUMBER = 112
+START_GAZETTE_NUMBER = 122
 SEARCH_TERMS = ['Assembleia Legislativa', 'Fundo de Previdência Parlamentar', 'Jurisdicionados Estaduais', 'Jurisdicionados municipais e estaduais']
 
 def normalize_text(text):
