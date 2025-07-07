@@ -41,19 +41,10 @@ class TLSAdapter(HTTPAdapter):
     """
     def init_poolmanager(self, *args, **kwargs):
         context = ssl.create_default_context()
-        # Define uma lista de cifras de criptografia fortes e modernas.
-        # Isso ajuda a evitar o erro 'SSLEOFError' ao negociar com o servidor.
-        ciphers = (
-            'ECDHE-ECDSA-AES128-GCM-SHA256',
-            'ECDHE-RSA-AES128-GCM-SHA256',
-            'ECDHE-ECDSA-AES256-GCM-SHA384',
-            'ECDHE-RSA-AES256-GCM-SHA384',
-            'ECDHE-ECDSA-CHACHA20-POLY1305',
-            'ECDHE-RSA-CHACHA20-POLY1305',
-            'DHE-RSA-AES128-GCM-SHA256',
-            'DHE-RSA-AES256-GCM-SHA384'
-        )
-        context.set_ciphers(':'.join(ciphers))
+        # Esta string de cifras é uma configuração comum para maximizar a compatibilidade
+        # com servidores que podem ter configurações de SSL/TLS mais antigas ou específicas,
+        # visando resolver o erro 'SSLEOFError'.
+        context.set_ciphers('ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:RSA+AESGCM:RSA+AES:!aNULL:!MD5:!DSS')
         kwargs['ssl_context'] = context
         return super().init_poolmanager(*args, **kwargs)
 
@@ -63,10 +54,10 @@ def create_requests_session():
     """
     session = requests.Session()
     retry = Retry(
-        total=5,  # Aumenta o número total de tentativas
+        total=5,
         read=5,
         connect=5,
-        backoff_factor=0.5, # Aumenta o tempo de espera entre as tentativas
+        backoff_factor=0.5,
         status_forcelist=(500, 502, 503, 504),
     )
     adapter = TLSAdapter(max_retries=retry)
