@@ -36,13 +36,24 @@ EMAIL_RECIPIENTS = [email.strip() for email in EMAIL_RECIPIENTS_STR.split(',')]
 
 class TLSAdapter(HTTPAdapter):
     """
-    Adaptador de transporte que força o uso de um contexto SSL/TLS mais moderno e seguro.
+    Adaptador de transporte que força o uso de um contexto SSL/TLS com cifras específicas
+    para aumentar a compatibilidade com servidores mais restritivos.
     """
     def init_poolmanager(self, *args, **kwargs):
-        # Cria um contexto SSL padrão, que geralmente negocia a versão mais alta do TLS
         context = ssl.create_default_context()
-        # Força a desativação de protocolos mais antigos e vulneráveis
-        context.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
+        # Define uma lista de cifras de criptografia fortes e modernas.
+        # Isso ajuda a evitar o erro 'SSLEOFError' ao negociar com o servidor.
+        ciphers = (
+            'ECDHE-ECDSA-AES128-GCM-SHA256',
+            'ECDHE-RSA-AES128-GCM-SHA256',
+            'ECDHE-ECDSA-AES256-GCM-SHA384',
+            'ECDHE-RSA-AES256-GCM-SHA384',
+            'ECDHE-ECDSA-CHACHA20-POLY1305',
+            'ECDHE-RSA-CHACHA20-POLY1305',
+            'DHE-RSA-AES128-GCM-SHA256',
+            'DHE-RSA-AES256-GCM-SHA384'
+        )
+        context.set_ciphers(':'.join(ciphers))
         kwargs['ssl_context'] = context
         return super().init_poolmanager(*args, **kwargs)
 
@@ -51,15 +62,13 @@ def create_requests_session():
     Cria uma sessão de requisições com uma estratégia de retentativas e um adaptador TLS customizado.
     """
     session = requests.Session()
-    # Estratégia de retentativas mais robusta
     retry = Retry(
-        total=5,
+        total=5,  # Aumenta o número total de tentativas
         read=5,
         connect=5,
         backoff_factor=0.5, # Aumenta o tempo de espera entre as tentativas
         status_forcelist=(500, 502, 503, 504),
     )
-    # Usa o adaptador TLS personalizado
     adapter = TLSAdapter(max_retries=retry)
     session.headers.update({
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
