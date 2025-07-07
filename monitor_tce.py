@@ -9,6 +9,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 import fitz  # PyMuPDF
 import unicodedata
+import ssl
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -33,26 +34,38 @@ if not all([EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECIPIENTS_STR]):
 
 EMAIL_RECIPIENTS = [email.strip() for email in EMAIL_RECIPIENTS_STR.split(',')]
 
+class TLSAdapter(HTTPAdapter):
+    """
+    Adaptador de transporte que força o uso de um contexto SSL/TLS mais moderno e seguro.
+    """
+    def init_poolmanager(self, *args, **kwargs):
+        # Cria um contexto SSL padrão, que geralmente negocia a versão mais alta do TLS
+        context = ssl.create_default_context()
+        # Força a desativação de protocolos mais antigos e vulneráveis
+        context.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
+        kwargs['ssl_context'] = context
+        return super().init_poolmanager(*args, **kwargs)
+
 def create_requests_session():
     """
-    Cria uma sessão de requisições com uma estratégia de retentativas para lidar com erros de conexão.
+    Cria uma sessão de requisições com uma estratégia de retentativas e um adaptador TLS customizado.
     """
     session = requests.Session()
-    # Define uma estratégia de retentativas (3 tentativas, com espera entre elas)
+    # Estratégia de retentativas mais robusta
     retry = Retry(
-        total=3,
-        read=3,
-        connect=3,
-        backoff_factor=0.3,
+        total=5,
+        read=5,
+        connect=5,
+        backoff_factor=0.5, # Aumenta o tempo de espera entre as tentativas
         status_forcelist=(500, 502, 503, 504),
     )
-    adapter = HTTPAdapter(max_retries=retry)
-    # Adiciona um User-Agent para simular um navegador e evitar bloqueios
+    # Usa o adaptador TLS personalizado
+    adapter = TLSAdapter(max_retries=retry)
     session.headers.update({
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     })
-    session.mount('http://', adapter)
     session.mount('https://', adapter)
+    session.mount('http://', adapter)
     return session
 
 def normalize_text(text):
