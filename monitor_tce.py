@@ -9,33 +9,55 @@ from email.mime.base import MIMEBase
 from email import encoders
 import fitz  # PyMuPDF
 import unicodedata
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # --- CONFIGURAÇÕES DINÂMICAS (LIDAS DAS VARIÁVEIS DE AMBIENTE) ---
-
-# As credenciais e destinatários são lidos de forma segura a partir das "Secrets" do GitHub
-SMTP_SERVER = 'smtp.gmail.com'  # Ex: 'smtp.gmail.com' ou 'smtp.office365.com'
-SMTP_PORT = 587                   # Porta do servidor SMTP (587 para TLS)
 EMAIL_SENDER = os.getenv('EMAIL_SENDER')
 EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD')
-# Os destinatários são lidos como uma string separada por vírgulas e convertidos para uma lista
 EMAIL_RECIPIENTS_STR = os.getenv('EMAIL_RECIPIENTS')
 
-# Validação para garantir que as variáveis de ambiente foram configuradas no GitHub
-if not all([EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECIPIENTS_STR]):
-    print("ERRO: Variáveis de ambiente (EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECIPIENTS) não foram configuradas nos Secrets do GitHub.")
-    exit(1) # Encerra o script se as credenciais não estiverem disponíveis
-
-# Converte a string de e-mails em uma lista de e-mails
-EMAIL_RECIPIENTS = [email.strip() for email in EMAIL_RECIPIENTS_STR.split(',')]
-
 # --- CONFIGURAÇÕES GERAIS ---
+SMTP_SERVER = 'smtp.gmail.com'
+SMTP_PORT = 587
 BASE_URL = "https://contexto-api.tce.ce.gov.br/arquivos/doe?url=%2F{year_code}%2FDOTCECE_{year_code}-{gazette_number}.pdf"
 START_GAZETTE_NUMBER = 122
 SEARCH_TERMS = ['Assembleia Legislativa', 'Fundo de Previdência Parlamentar', 'Jurisdicionados Estaduais', 'Jurisdicionados municipais e estaduais']
 
+# --- INÍCIO DO SCRIPT ---
+
+# Validação das variáveis de ambiente
+if not all([EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECIPIENTS_STR]):
+    print("ERRO: Variáveis de ambiente (EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECIPIENTS) não foram configuradas nos Secrets do GitHub.")
+    exit(1)
+
+EMAIL_RECIPIENTS = [email.strip() for email in EMAIL_RECIPIENTS_STR.split(',')]
+
+def create_requests_session():
+    """
+    Cria uma sessão de requisições com uma estratégia de retentativas para lidar com erros de conexão.
+    """
+    session = requests.Session()
+    # Define uma estratégia de retentativas (3 tentativas, com espera entre elas)
+    retry = Retry(
+        total=3,
+        read=3,
+        connect=3,
+        backoff_factor=0.3,
+        status_forcelist=(500, 502, 503, 504),
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    # Adiciona um User-Agent para simular um navegador e evitar bloqueios
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    })
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
+
 def normalize_text(text):
     """
-    Remove acentos, cedilhas e converte para minúsculas para uma comparação eficaz.
+    Remove acentos, cedilhas e converte para minúsculas.
     """
     try:
         nfkd_form = unicodedata.normalize('NFD', text)
@@ -46,9 +68,10 @@ def normalize_text(text):
 
 def get_latest_gazette_info():
     """
-    Encontra a URL e o nome do arquivo do diário mais recente.
+    Encontra a URL e o nome do arquivo do diário mais recente usando a sessão com retentativas.
     """
     print("Procurando pelo diário oficial mais recente...")
+    session = create_requests_session()
     try:
         current_year = datetime.now().year
         year_code = current_year - 2013
@@ -62,7 +85,7 @@ def get_latest_gazette_info():
             encoded_path = f"%2F{year_code}%2F{file_name}"
             url_to_check = f"https://contexto-api.tce.ce.gov.br/arquivos/doe?url={encoded_path}"
             print(f"Tentando verificar: {file_name}...")
-            response = requests.head(url_to_check, allow_redirects=True, timeout=15)
+            response = session.head(url_to_check, allow_redirects=True, timeout=15)
 
             if response.status_code == 200:
                 print(f"Sucesso! Diário encontrado: {file_name}")
@@ -80,11 +103,12 @@ def get_latest_gazette_info():
 
 def download_pdf(url, filename):
     """
-    Baixa o arquivo PDF da URL fornecida.
+    Baixa o arquivo PDF da URL fornecida usando a sessão com retentativas.
     """
     print(f"Baixando o arquivo: {filename}...")
+    session = create_requests_session()
     try:
-        response = requests.get(url, timeout=60)
+        response = session.get(url, timeout=60)
         response.raise_for_status()
         filepath = os.path.join(os.getcwd(), filename)
         with open(filepath, 'wb') as f:
@@ -97,7 +121,7 @@ def download_pdf(url, filename):
 
 def analyze_pdf_and_find_terms(pdf_path, search_terms):
     """
-    Lê o texto de um PDF, separa em publicações e busca por termos específicos, ignorando acentos e caixa.
+    Lê o texto de um PDF, separa em publicações e busca por termos específicos.
     """
     print("Analisando o conteúdo do PDF...")
     matched_publications = []
@@ -166,8 +190,6 @@ def send_email_with_attachment(subject, body, recipients, attachment_path):
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         server.starttls()
         server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-        # O campo 'To' é omitido, e os destinatários são passados no sendmail,
-        # tratando-os efetivamente como BCC (Cópia Oculta).
         server.sendmail(EMAIL_SENDER, recipients, msg.as_string())
         server.quit()
         print("E-mail enviado com sucesso!")
