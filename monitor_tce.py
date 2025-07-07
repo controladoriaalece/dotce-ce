@@ -36,15 +36,14 @@ EMAIL_RECIPIENTS = [email.strip() for email in EMAIL_RECIPIENTS_STR.split(',')]
 
 class TLSAdapter(HTTPAdapter):
     """
-    Adaptador de transporte que força o uso de um contexto SSL/TLS com cifras específicas
-    para aumentar a compatibilidade com servidores mais restritivos.
+    Adaptador de transporte que força o uso de um contexto SSL/TLS com um perfil de segurança
+    mais compatível para resolver erros de handshake (SSLEOFError).
     """
     def init_poolmanager(self, *args, **kwargs):
         context = ssl.create_default_context()
-        # Esta string de cifras é uma configuração comum para maximizar a compatibilidade
-        # com servidores que podem ter configurações de SSL/TLS mais antigas ou específicas,
-        # visando resolver o erro 'SSLEOFError'.
-        context.set_ciphers('ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:RSA+AESGCM:RSA+AES:!aNULL:!MD5:!DSS')
+        # A linha abaixo ajusta o nível de segurança da conexão para um perfil mais compatível,
+        # o que é uma solução eficaz para o erro 'UNEXPECTED_EOF_WHILE_READING'.
+        context.set_ciphers('DEFAULT:@SECLEVEL=1')
         kwargs['ssl_context'] = context
         return super().init_poolmanager(*args, **kwargs)
 
