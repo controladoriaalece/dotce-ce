@@ -9,9 +9,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 import fitz  # PyMuPDF
 import unicodedata
-import ssl
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+import subprocess
 
 # --- CONFIGURAÇÕES DINÂMICAS (LIDAS DAS VARIÁVEIS DE AMBIENTE) ---
 EMAIL_SENDER = os.getenv('EMAIL_SENDER')
@@ -34,39 +32,6 @@ if not all([EMAIL_SENDER, EMAIL_PASSWORD, EMAIL_RECIPIENTS_STR]):
 
 EMAIL_RECIPIENTS = [email.strip() for email in EMAIL_RECIPIENTS_STR.split(',')]
 
-class TLSAdapter(HTTPAdapter):
-    """
-    Adaptador de transporte que força o uso de um contexto SSL/TLS com um perfil de segurança
-    mais compatível para resolver erros de handshake (SSLEOFError).
-    """
-    def init_poolmanager(self, *args, **kwargs):
-        context = ssl.create_default_context()
-        # A linha abaixo ajusta o nível de segurança da conexão para um perfil mais compatível,
-        # o que é uma solução eficaz para o erro 'UNEXPECTED_EOF_WHILE_READING'.
-        context.set_ciphers('DEFAULT:@SECLEVEL=1')
-        kwargs['ssl_context'] = context
-        return super().init_poolmanager(*args, **kwargs)
-
-def create_requests_session():
-    """
-    Cria uma sessão de requisições com uma estratégia de retentativas e um adaptador TLS customizado.
-    """
-    session = requests.Session()
-    retry = Retry(
-        total=5,
-        read=5,
-        connect=5,
-        backoff_factor=0.5,
-        status_forcelist=(500, 502, 503, 504),
-    )
-    adapter = TLSAdapter(max_retries=retry)
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    })
-    session.mount('https://', adapter)
-    session.mount('http://', adapter)
-    return session
-
 def normalize_text(text):
     """
     Remove acentos, cedilhas e converte para minúsculas.
@@ -80,10 +45,9 @@ def normalize_text(text):
 
 def get_latest_gazette_info():
     """
-    Encontra a URL e o nome do arquivo do diário mais recente usando a sessão com retentativas.
+    Encontra a URL e o nome do arquivo do diário mais recente usando curl via subprocess.
     """
     print("Procurando pelo diário oficial mais recente...")
-    session = create_requests_session()
     try:
         current_year = datetime.now().year
         year_code = current_year - 2013
@@ -97,38 +61,45 @@ def get_latest_gazette_info():
             encoded_path = f"%2F{year_code}%2F{file_name}"
             url_to_check = f"https://contexto-api.tce.ce.gov.br/arquivos/doe?url={encoded_path}"
             print(f"Tentando verificar: {file_name}...")
-            response = session.head(url_to_check, allow_redirects=True, timeout=15)
 
-            if response.status_code == 200:
+            command = ['curl', '--head', '--silent', '--location', '--max-time', '20', url_to_check]
+            
+            result = subprocess.run(command, capture_output=True, text=True)
+
+            status_code = 0
+            if result.returncode == 0 and result.stdout:
+                first_line = result.stdout.split('\n')[0]
+                match = re.search(r'HTTP/[\d\.]+\s+(\d{3})', first_line)
+                if match:
+                    status_code = int(match.group(1))
+
+            if status_code == 200:
                 print(f"Sucesso! Diário encontrado: {file_name}")
                 last_successful_url = url_to_check
                 last_successful_filename = file_name
                 gazette_number += 1
             else:
-                print(f"Falha ao encontrar o diário nº {gazette_number} (Status: {response.status_code}).")
+                print(f"Falha ao encontrar o diário nº {gazette_number} (Status: {status_code}).")
                 break
-    except requests.exceptions.RequestException as e:
-        print(f"Erro de conexão ao tentar encontrar o diário: {e}")
+    except Exception as e:
+        print(f"Erro de conexão ou subprocesso ao tentar encontrar o diário: {e}")
         return None, None
         
     return last_successful_url, last_successful_filename
 
 def download_pdf(url, filename):
     """
-    Baixa o arquivo PDF da URL fornecida usando a sessão com retentativas.
+    Baixa o arquivo PDF da URL fornecida usando curl via subprocess.
     """
     print(f"Baixando o arquivo: {filename}...")
-    session = create_requests_session()
+    filepath = os.path.join(os.getcwd(), filename)
     try:
-        response = session.get(url, timeout=60)
-        response.raise_for_status()
-        filepath = os.path.join(os.getcwd(), filename)
-        with open(filepath, 'wb') as f:
-            f.write(response.content)
+        command = ['curl', '--location', '--output', filepath, '--silent', '--max-time', '90', url]
+        subprocess.run(command, check=True)
         print(f"Download completo. Arquivo salvo em: {filepath}")
         return filepath
-    except requests.exceptions.RequestException as e:
-        print(f"Erro ao baixar o PDF: {e}")
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"Erro ao baixar o PDF com curl: {e}")
         return None
 
 def analyze_pdf_and_find_terms(pdf_path, search_terms):
